@@ -13,15 +13,13 @@
     .calendar-header button { background: none; border: 1px solid var(--border-color); color: var(--text-secondary); font-size: 1.5rem; border-radius: 8px; width: 44px; height: 44px; cursor: pointer; transition: all 0.2s ease; }
     .calendar-header button:hover { background-color: var(--bg-tertiary); }
 
-    /* --- NEW CSS GRID LAYOUT FOR THE CALENDAR --- */
+    /* --- CORE AESTHETIC UPGRADE FOR A "PRO APP" LOOK --- */
     #calendar-grid {
         display: grid;
         grid-template-columns: repeat(7, 1fr);
-        /* grid-template-rows: auto repeat(5, 1fr);  Let the content define the row height */
-        flex-grow: 1; /* This is the key to filling the page */
-        gap: 1px;
-        background-color: var(--border-color);
-        border: 1px solid var(--border-color);
+        flex-grow: 1;
+        border-top: 1px solid var(--border-color);
+        border-left: 1px solid var(--border-color);
         border-radius: 8px;
         overflow: hidden;
     }
@@ -29,28 +27,58 @@
         text-align: center;
         padding: 0.75rem 0;
         font-weight: 500;
+        font-size: 0.9rem;
         color: var(--text-secondary);
         background-color: var(--bg-secondary);
     }
     .day-cell {
         background-color: var(--bg-secondary);
+        border-right: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border-color);
         padding: 0.5rem;
         transition: background-color 0.2s;
         overflow: hidden;
-        min-height: 12vh; /* Set a minimum height for rows */
+        min-height: 12vh;
+        display: flex;
+        flex-direction: column;
     }
-    .day-cell.other-month { background-color: var(--bg-primary); }
     .day-cell.has-schedule { cursor: pointer; }
     .day-cell.has-schedule:hover { background-color: var(--bg-tertiary); }
-    .day-number { font-size: 0.9rem; font-weight: 500; color: var(--text-secondary); }
-    .day-cell.today .day-number {
-        font-weight: 700; background-color: var(--accent-primary);
-        color: #121212; border-radius: 50%; width: 26px; height: 26px;
-        display: flex; align-items: center; justify-content: center;
+    .day-number {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
     }
-    .day-cell.completed { border-top: 3px solid var(--success-color); }
-    .task-dot { height: 6px; width: 6px; background-color: var(--accent-secondary); border-radius: 50%; margin-top: 0.5rem; }
-    /* --- END OF NEW CSS --- */
+    .day-cell.today .day-number {
+        font-weight: 700;
+        background-color: var(--accent-primary);
+        color: #121212;
+        border-radius: 50%;
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .day-cell.other-month .day-number { opacity: 0.3; }
+    .day-cell.completed {
+        /* Use a subtle left border instead of top for a cleaner look */
+        border-left: 4px solid var(--success-color);
+    }
+    .task-preview {
+        background-color: var(--accent-secondary);
+        color: #121212;
+        font-weight: 500;
+        font-size: 0.8rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-top: 0.25rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis; /* Ensures long text doesn't break layout */
+    }
+    /* --- END OF AESTHETIC UPGRADE --- */
 
     #sidebar-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; }
     .sidebar-item { margin-bottom: 1.5rem; }
@@ -86,7 +114,6 @@
 </div>
 
 <div id="schedule-modal" class="modal">
-    <!-- Modal content is unchanged -->
     <div class="modal-content">
         <div class="modal-header"><h2 id="modal-date"></h2><span class="modal-close">&times;</span></div>
         <table class="schedule-table">
@@ -105,18 +132,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const calendarGrid = document.getElementById('calendar-grid');
     const monthYearEl = document.getElementById('month-year');
     
-    // --- NEW: Function to render calendar using CSS Grid ---
     const fetchAndRenderCalendar = async () => {
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth() + 1;
-        
         const res = await fetch(`/api/calendar_data?year=${year}&month=${month}`);
         const data = await res.json();
         
         monthYearEl.textContent = `${data.monthName} ${data.year}`;
-        calendarGrid.innerHTML = ''; // Clear previous grid
+        calendarGrid.innerHTML = '';
 
-        // 1. Add header cells
         const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
         days.forEach(day => {
             const headerCell = document.createElement('div');
@@ -125,30 +149,34 @@ document.addEventListener('DOMContentLoaded', () => {
             calendarGrid.appendChild(headerCell);
         });
 
-        // 2. Add empty cells for the first day's offset
         for (let i = 0; i < data.firstWeekday; i++) {
             const emptyCell = document.createElement('div');
             emptyCell.className = 'day-cell other-month';
             calendarGrid.appendChild(emptyCell);
         }
 
-        // 3. Add day cells for the month
         const today = new Date();
         for (let day = 1; day <= data.numDays; day++) {
             const cell = document.createElement('div');
             cell.className = 'day-cell';
             const dateStr = `${data.year}-${String(data.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             cell.dataset.date = dateStr;
-            cell.innerHTML = `<span class="day-number">${day}</span>`;
+            
+            let cellHTML = `<span class="day-number">${day}</span>`;
 
             if (data.schedule[dateStr]) {
                 cell.classList.add('has-schedule');
-                cell.innerHTML += '<div class="task-dot"></div>';
                 const tasks = data.schedule[dateStr];
+                // Display the first task as a preview
+                cellHTML += `<div class="task-preview">${tasks[0].topic}</div>`;
+
                 const dateProgress = progressData[dateStr] || {};
                 const allCompleted = tasks.length > 0 && tasks.every((_, index) => dateProgress[index] === 'completed');
                 if (allCompleted) cell.classList.add('completed');
             }
+            
+            cell.innerHTML = cellHTML;
+
             if (day === today.getDate() && data.month === (today.getMonth() + 1) && data.year === today.getFullYear()) {
                 cell.classList.add('today');
             }
@@ -176,7 +204,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // --- Event Listeners and Modal Logic (Mostly Unchanged) ---
     document.getElementById('prev-month').addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); fetchAndRenderCalendar(); });
     document.getElementById('next-month').addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); fetchAndRenderCalendar(); });
     
