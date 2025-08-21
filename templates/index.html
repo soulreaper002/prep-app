@@ -1,0 +1,245 @@
+<!-- Save this as templates/index.html -->
+{% extends "layout.html" %}
+
+{% block title %}Calendar | Prep Tracker{% endblock %}
+
+{% block content %}
+<style>
+    .calendar-container { display: flex; gap: 2rem; height: calc(100vh - 4rem); }
+    .calendar-main { flex-grow: 1; display: flex; flex-direction: column; }
+    .calendar-sidebar { width: 320px; flex-shrink: 0; background-color: var(--bg-secondary); border-radius: 12px; padding: 1.5rem; box-sizing: border-box; overflow-y: auto; }
+    .calendar-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; }
+    #month-year { font-size: 1.75rem; font-weight: 700; color: var(--text-primary); }
+    .calendar-header button { background: none; border: 1px solid var(--border-color); color: var(--text-secondary); font-size: 1.5rem; border-radius: 8px; width: 44px; height: 44px; cursor: pointer; transition: all 0.2s ease; }
+    .calendar-header button:hover { background-color: var(--bg-tertiary); }
+
+    /* --- NEW CSS GRID LAYOUT FOR THE CALENDAR --- */
+    #calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        /* grid-template-rows: auto repeat(5, 1fr);  Let the content define the row height */
+        flex-grow: 1; /* This is the key to filling the page */
+        gap: 1px;
+        background-color: var(--border-color);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .calendar-header-cell {
+        text-align: center;
+        padding: 0.75rem 0;
+        font-weight: 500;
+        color: var(--text-secondary);
+        background-color: var(--bg-secondary);
+    }
+    .day-cell {
+        background-color: var(--bg-secondary);
+        padding: 0.5rem;
+        transition: background-color 0.2s;
+        overflow: hidden;
+        min-height: 12vh; /* Set a minimum height for rows */
+    }
+    .day-cell.other-month { background-color: var(--bg-primary); }
+    .day-cell.has-schedule { cursor: pointer; }
+    .day-cell.has-schedule:hover { background-color: var(--bg-tertiary); }
+    .day-number { font-size: 0.9rem; font-weight: 500; color: var(--text-secondary); }
+    .day-cell.today .day-number {
+        font-weight: 700; background-color: var(--accent-primary);
+        color: #121212; border-radius: 50%; width: 26px; height: 26px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .day-cell.completed { border-top: 3px solid var(--success-color); }
+    .task-dot { height: 6px; width: 6px; background-color: var(--accent-secondary); border-radius: 50%; margin-top: 0.5rem; }
+    /* --- END OF NEW CSS --- */
+
+    #sidebar-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; }
+    .sidebar-item { margin-bottom: 1.5rem; }
+    .sidebar-item-time { color: var(--accent-secondary); font-weight: 700; font-size: 0.9rem; }
+    .sidebar-item-topic { margin: 0.2rem 0; color: var(--text-primary); }
+    .no-tasks { color: var(--text-secondary); }
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); justify-content: center; align-items: center; }
+    .modal.active { display: flex; }
+    .modal-content { background-color: var(--bg-tertiary); padding: 2rem; border-radius: 12px; width: 90%; max-width: 600px; border-top: 5px solid var(--accent-primary); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; }
+    .modal-close { font-size: 2rem; cursor: pointer; }
+    .schedule-table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
+    .schedule-table th, .schedule-table td { padding: 0.8rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+    .schedule-table a { color: var(--accent-secondary); }
+    .status-toggle { cursor: pointer; }
+</style>
+
+<div class="calendar-container">
+    <div class="calendar-main">
+        <div class="calendar-header">
+            <h2 id="month-year"></h2>
+            <div>
+                <button id="prev-month">&lt;</button>
+                <button id="next-month">&gt;</button>
+            </div>
+        </div>
+        <div id="calendar-grid"></div>
+    </div>
+    <div class="calendar-sidebar">
+        <h3 id="sidebar-title">Today's Schedule</h3>
+        <div id="sidebar-schedule"></div>
+    </div>
+</div>
+
+<div id="schedule-modal" class="modal">
+    <!-- Modal content is unchanged -->
+    <div class="modal-content">
+        <div class="modal-header"><h2 id="modal-date"></h2><span class="modal-close">&times;</span></div>
+        <table class="schedule-table">
+            <thead><tr><th>Time</th><th>Topic</th><th>Resource</th><th>Status</th></tr></thead>
+            <tbody id="modal-schedule-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    let currentDate = new Date(2025, 7, 1);
+    let resourceData = [];
+    let progressData = JSON.parse(localStorage.getItem('prepProgress')) || {};
+
+    const calendarGrid = document.getElementById('calendar-grid');
+    const monthYearEl = document.getElementById('month-year');
+    
+    // --- NEW: Function to render calendar using CSS Grid ---
+    const fetchAndRenderCalendar = async () => {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth() + 1;
+        
+        const res = await fetch(`/api/calendar_data?year=${year}&month=${month}`);
+        const data = await res.json();
+        
+        monthYearEl.textContent = `${data.monthName} ${data.year}`;
+        calendarGrid.innerHTML = ''; // Clear previous grid
+
+        // 1. Add header cells
+        const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        days.forEach(day => {
+            const headerCell = document.createElement('div');
+            headerCell.className = 'calendar-header-cell';
+            headerCell.textContent = day;
+            calendarGrid.appendChild(headerCell);
+        });
+
+        // 2. Add empty cells for the first day's offset
+        for (let i = 0; i < data.firstWeekday; i++) {
+            const emptyCell = document.createElement('div');
+            emptyCell.className = 'day-cell other-month';
+            calendarGrid.appendChild(emptyCell);
+        }
+
+        // 3. Add day cells for the month
+        const today = new Date();
+        for (let day = 1; day <= data.numDays; day++) {
+            const cell = document.createElement('div');
+            cell.className = 'day-cell';
+            const dateStr = `${data.year}-${String(data.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            cell.dataset.date = dateStr;
+            cell.innerHTML = `<span class="day-number">${day}</span>`;
+
+            if (data.schedule[dateStr]) {
+                cell.classList.add('has-schedule');
+                cell.innerHTML += '<div class="task-dot"></div>';
+                const tasks = data.schedule[dateStr];
+                const dateProgress = progressData[dateStr] || {};
+                const allCompleted = tasks.length > 0 && tasks.every((_, index) => dateProgress[index] === 'completed');
+                if (allCompleted) cell.classList.add('completed');
+            }
+            if (day === today.getDate() && data.month === (today.getMonth() + 1) && data.year === today.getFullYear()) {
+                cell.classList.add('today');
+            }
+            calendarGrid.appendChild(cell);
+        }
+    };
+
+    const fetchAndRenderSidebar = async (date) => {
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        document.getElementById('sidebar-title').textContent = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+        
+        const res = await fetch(`/api/schedule/day/${dateStr}`);
+        const schedule = await res.json();
+        const sidebarEl = document.getElementById('sidebar-schedule');
+        sidebarEl.innerHTML = '';
+        if (!schedule.length) {
+            sidebarEl.innerHTML = '<p class="no-tasks">No tasks scheduled for this day.</p>';
+            return;
+        }
+        schedule.forEach(item => {
+            const itemEl = document.createElement('div');
+            itemEl.className = 'sidebar-item';
+            itemEl.innerHTML = `<div class="sidebar-item-time">${item.time}</div><p class="sidebar-item-topic">${item.topic}</p>`;
+            sidebarEl.appendChild(itemEl);
+        });
+    };
+
+    // --- Event Listeners and Modal Logic (Mostly Unchanged) ---
+    document.getElementById('prev-month').addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); fetchAndRenderCalendar(); });
+    document.getElementById('next-month').addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); fetchAndRenderCalendar(); });
+    
+    const modal = document.getElementById('schedule-modal');
+    const modalDateEl = document.getElementById('modal-date');
+    const modalBodyEl = document.getElementById('modal-schedule-body');
+
+    const openModal = async (dateStr) => {
+        const res = await fetch(`/api/schedule/day/${dateStr}`);
+        const schedule = await res.json();
+        if (!schedule.length) return;
+        
+        const dateObj = new Date(dateStr + 'T00:00:00');
+        modalDateEl.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+        
+        modalBodyEl.innerHTML = '';
+        schedule.forEach((item, index) => {
+            const resourceLink = resourceData.find(r => r.name === item.resource)?.link || '#';
+            const status = progressData[dateStr]?.[index] || 'pending';
+            const icon = status === 'completed' ? '✅' : '⬜️';
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${item.time}</td><td>${item.topic}</td><td><a href="${resourceLink}" target="_blank">${item.resource}</a></td><td><span class="status-toggle" data-date="${dateStr}" data-index="${index}">${icon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span></td>`;
+            modalBodyEl.appendChild(row);
+        });
+        modal.classList.add('active');
+    };
+
+    calendarGrid.addEventListener('click', (e) => {
+        const dayCell = e.target.closest('.day-cell');
+        if (dayCell && dayCell.dataset.date) {
+            const date = new Date(dayCell.dataset.date + 'T00:00:00');
+            fetchAndRenderSidebar(date);
+            if (dayCell.classList.contains('has-schedule')) {
+                openModal(dayCell.dataset.date);
+            }
+        }
+    });
+
+    const closeModal = () => modal.classList.remove('active');
+    document.querySelector('.modal-close').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+    modalBodyEl.addEventListener('click', (e) => {
+        const toggle = e.target.closest('.status-toggle');
+        if (toggle) {
+            const { date, index } = toggle.dataset;
+            if (!progressData[date]) progressData[date] = {};
+            const currentStatus = progressData[date][index] || 'pending';
+            progressData[date][index] = currentStatus === 'pending' ? 'completed' : 'pending';
+            localStorage.setItem('prepProgress', JSON.stringify(progressData));
+            openModal(date);
+            fetchAndRenderCalendar();
+        }
+    });
+    
+    const initialize = async () => {
+        const res = await fetch('/api/resources');
+        resourceData = await res.json();
+        await fetchAndRenderCalendar();
+        await fetchAndRenderSidebar(new Date());
+    };
+
+    initialize();
+});
+</script>
+{% endblock %}

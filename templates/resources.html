@@ -1,0 +1,138 @@
+<!-- Save this as templates/resources.html -->
+{% extends "layout.html" %}
+
+{% block title %}Resources | Prep Tracker{% endblock %}
+
+{% block content %}
+<style>
+    .resource-header {
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+    }
+    .resource-header h1 {
+        font-size: 2.5rem;
+        margin: 0;
+        color: var(--accent-primary);
+    }
+    .resource-filters {
+        margin: 2rem 0;
+        display: flex;
+        gap: 1rem;
+    }
+    .resource-filters input, .resource-filters select {
+        background-color: var(--bg-secondary); border: 1px solid var(--border-color);
+        color: var(--text-primary); padding: 0.8rem 1rem; border-radius: 8px; font-size: 1rem;
+    }
+    .resource-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+    .resource-card {
+        background-color: var(--bg-secondary);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid var(--border-color);
+        transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .resource-card:hover {
+        transform: translateY(-5px);
+        border-color: var(--accent-primary);
+    }
+    .resource-card .category {
+        font-size: 0.9rem;
+        color: var(--accent-secondary);
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    .resource-card h3 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.25rem;
+    }
+    .resource-card p {
+        color: var(--text-secondary);
+        margin: 0 0 1.5rem 0;
+        font-size: 1rem;
+    }
+    .resource-card a {
+        color: var(--accent-primary);
+        text-decoration: none;
+        font-weight: 700;
+    }
+</style>
+
+<div class="resource-header">
+    <h1>Resource Library</h1>
+    <p style="color: var(--text-secondary);">Your curated list of essential preparation materials.</p>
+</div>
+
+<div class="resource-filters">
+    <input type="text" id="resource-search" placeholder="Search by name...">
+    <select id="resource-category">
+        <option value="all">All Categories</option>
+    </select>
+</div>
+
+<div class="resource-grid" id="resource-grid">
+    <!-- Resources will be injected here by JavaScript -->
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const resourceGrid = document.getElementById('resource-grid');
+    const categoryFilter = document.getElementById('resource-category');
+    const searchInput = document.getElementById('resource-search');
+    let allResources = [];
+
+    const renderResources = () => {
+        const searchTerm = searchInput.value.toLowerCase();
+        const selectedCategory = categoryFilter.value;
+
+        const filteredResources = allResources.filter(r => {
+            const matchesSearch = r.name.toLowerCase().includes(searchTerm);
+            const matchesCategory = selectedCategory === 'all' || r.topic === selectedCategory;
+            return matchesSearch && matchesCategory;
+        });
+        
+        resourceGrid.innerHTML = '';
+        if (filteredResources.length === 0) {
+            resourceGrid.innerHTML = '<p>No resources found.</p>';
+            return;
+        }
+
+        filteredResources.forEach(res => {
+            const card = document.createElement('div');
+            card.className = 'resource-card';
+            card.innerHTML = `
+                <div class="category">${res.topic.toUpperCase()}</div>
+                <h3>${res.name}</h3>
+                <p>${res.desc}</p>
+                <a href="${res.link}" target="_blank">Go to Resource &rarr;</a>
+            `;
+            resourceGrid.appendChild(card);
+        });
+    };
+    
+    const initialize = async () => {
+        const res = await fetch('/api/resources');
+        allResources = await res.json();
+        
+        const categories = [...new Set(allResources.map(r => r.topic))];
+        categories.forEach(cat => {
+            const option = document.createElement('option');
+            option.value = cat;
+            option.textContent = cat;
+            categoryFilter.appendChild(option);
+        });
+        
+        searchInput.addEventListener('input', renderResources);
+        categoryFilter.addEventListener('change', renderResources);
+
+        renderResources();
+    };
+
+    initialize();
+});
+</script>
+{% endblock %}
