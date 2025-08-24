@@ -1,4 +1,4 @@
-# Save this as .gcloudignore
+
 __pycache__/
 *.pyc
 .DS_Store
