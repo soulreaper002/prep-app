@@ -1,4 +1,3 @@
-# Save this code as app.py
 from flask import Flask, jsonify, render_template, request
 import calendar
 from datetime import date, timedelta
